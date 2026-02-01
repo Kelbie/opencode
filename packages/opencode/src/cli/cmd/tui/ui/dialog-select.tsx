@@ -20,6 +20,7 @@ export interface DialogSelectProps<T> {
   onFilter?: (query: string) => void
   onSelect?: (option: DialogSelectOption<T>) => void
   skipFilter?: boolean
+  showDisabled?: boolean
   keybind?: {
     keybind?: Keybind.Info
     title: string
@@ -73,18 +74,22 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   let input: InputRenderable
 
   const filtered = createMemo(() => {
-    if (props.skipFilter) return props.options.filter((x) => x.hidden !== true)
+    const visible = props.options.filter((x) => x.hidden !== true)
+    if (props.skipFilter) {
+      return props.showDisabled ? visible : visible.filter((x) => x.disabled !== true)
+    }
     const needle = store.filter.toLowerCase()
     const options = pipe(
-      props.options,
+      visible,
       filter((x) => x.hidden !== true),
     )
-    if (!needle) return options
+    const enabled = props.showDisabled ? options : options.filter((x) => x.disabled !== true)
+    if (!needle) return enabled
 
     // prioritize title matches (weight: 2) over category matches (weight: 1).
     // users typically search by the item name, and not its category.
     const result = fuzzysort
-      .go(needle, options, {
+      .go(needle, enabled, {
         keys: ["title", "category"],
         scoreFn: (r) => r[0].score * 2 + r[1].score,
       })

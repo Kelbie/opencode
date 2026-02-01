@@ -58,8 +58,9 @@ export function DialogModel(props: { providerID?: string }) {
       .catch(() => {})
   })
 
-  function footerForOpenCode(cost: { input?: number } | undefined) {
-    return cost?.input === 0 ? "Free" : undefined
+  function footerForOpenCode(modelID: string, cost: { input?: number; output?: number } | undefined) {
+    if (modelID.endsWith("-free")) return "Free"
+    if (cost?.input === 0 && cost?.output === 0) return "Free"
   }
 
   function footerForRoutstr(cost: { input?: number; output?: number } | undefined) {
@@ -129,7 +130,7 @@ export function DialogModel(props: { providerID?: string }) {
                 provider.id === "routstr" && insufficient && maxMsat !== undefined
                   ? routstrInsufficientFooter(maxMsat)
                   : provider.id === "opencode"
-                    ? footerForOpenCode(model.cost)
+                    ? footerForOpenCode(model.id, model.cost)
                     : undefined,
               onSelect: () => {
                 dialog.clear()
@@ -171,7 +172,7 @@ export function DialogModel(props: { providerID?: string }) {
                   : provider.id === "routstr"
                     ? footerForRoutstr(model.cost)
                   : provider.id === "opencode"
-                    ? footerForOpenCode(model.cost)
+                    ? footerForOpenCode(model.id, model.cost)
                     : undefined,
               onSelect: () => {
                 dialog.clear()
@@ -225,7 +226,7 @@ export function DialogModel(props: { providerID?: string }) {
                   : provider.id === "routstr"
                     ? footerForRoutstr(info.cost)
                     : provider.id === "opencode"
-                      ? footerForOpenCode(info.cost)
+                      ? footerForOpenCode(model, info.cost)
                       : undefined,
               onSelect() {
                 dialog.clear()
@@ -314,6 +315,7 @@ export function DialogModel(props: { providerID?: string }) {
       ref={setRef}
       onFilter={setQuery}
       skipFilter={true}
+      showDisabled={true}
       title={title()}
       current={local.model.current()}
       options={options()}
