@@ -125,7 +125,7 @@ export function DialogModel(props: { providerID?: string }) {
               title: model.name ?? item.modelID,
               description: provider.name,
               category: "Favorites",
-              disabled: insufficient || (provider.id === "opencode" && model.id.includes("-nano")),
+              disabled: insufficient,
               footer:
                 provider.id === "routstr" && insufficient && maxMsat !== undefined
                   ? routstrInsufficientFooter(maxMsat)
@@ -165,7 +165,7 @@ export function DialogModel(props: { providerID?: string }) {
               title: model.name ?? item.modelID,
               description: provider.name,
               category: "Recent",
-              disabled: insufficient || (provider.id === "opencode" && model.id.includes("-nano")),
+              disabled: insufficient,
               footer:
                 provider.id === "routstr" && insufficient && maxMsat !== undefined
                   ? routstrInsufficientFooter(maxMsat)
@@ -219,7 +219,7 @@ export function DialogModel(props: { providerID?: string }) {
                 ? "(Favorite)"
                 : undefined,
               category: connected() ? provider.name : undefined,
-              disabled: insufficient || (provider.id === "opencode" && model.includes("-nano")),
+              disabled: insufficient,
               footer:
                 provider.id === "routstr" && insufficient && maxMsat !== undefined
                   ? routstrInsufficientFooter(maxMsat)
