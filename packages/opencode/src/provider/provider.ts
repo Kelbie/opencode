@@ -231,6 +231,25 @@ export namespace Provider {
           const output =
             typeof model?.top_provider?.max_completion_tokens === "number" ? model.top_provider.max_completion_tokens : 8192
 
+          const pricing = model?.pricing
+          const promptUsdPerToken = typeof pricing?.prompt === "number" ? pricing.prompt : undefined
+          const completionUsdPerToken = typeof pricing?.completion === "number" ? pricing.completion : undefined
+
+          const satsPricing = model?.sats_pricing
+          const satsPrompt = typeof satsPricing?.prompt === "number" ? satsPricing.prompt : undefined
+          const satsCompletion = typeof satsPricing?.completion === "number" ? satsPricing.completion : undefined
+          const satsRequest = typeof satsPricing?.request === "number" ? satsPricing.request : 0
+
+          // Routstr/OpenRouter pricing is exposed as sats-per-token; estimate a minimum required balance
+          // (smaller than max_cost) so we only disable when genuinely too low.
+          const minInputTokens = 100
+          const minOutputTokens = Math.min(1000, output)
+          const minSats =
+            typeof satsPrompt === "number" && typeof satsCompletion === "number"
+              ? satsRequest + minInputTokens * satsPrompt + minOutputTokens * satsCompletion
+              : undefined
+          const minMsat = typeof minSats === "number" && minSats >= 0 ? Math.ceil(minSats * 1000) : undefined
+
           input.models[id] = {
             id,
             providerID: input.id,
@@ -263,8 +282,12 @@ export namespace Provider {
               interleaved: false,
             },
             cost: {
-              input: 0,
-              output: 0,
+              // Routstr returns USD-per-token, convert to USD-per-1M tokens to match models.dev convention.
+              input: typeof promptUsdPerToken === "number" && promptUsdPerToken >= 0 ? promptUsdPerToken * 1_000_000 : 0,
+              output:
+                typeof completionUsdPerToken === "number" && completionUsdPerToken >= 0
+                  ? completionUsdPerToken * 1_000_000
+                  : 0,
               cache: {
                 read: 0,
                 write: 0,
@@ -275,7 +298,11 @@ export namespace Provider {
               output,
             },
             status: "active",
-            options: {},
+            options: {
+              routstr: {
+                min_msats: minMsat,
+              },
+            },
             headers: {},
             release_date: release,
             variants: {},

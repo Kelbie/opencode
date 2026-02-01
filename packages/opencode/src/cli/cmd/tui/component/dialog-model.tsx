@@ -1,4 +1,4 @@
-import { createMemo, createSignal } from "solid-js"
+import { createEffect, createMemo, createSignal } from "solid-js"
 import { useLocal } from "@tui/context/local"
 import { useSync } from "@tui/context/sync"
 import { map, pipe, flatMap, entries, filter, sortBy, take } from "remeda"
@@ -7,6 +7,8 @@ import { useDialog } from "@tui/ui/dialog"
 import { createDialogProviderOptions, DialogProvider } from "./dialog-provider"
 import { useKeybind } from "../context/keybind"
 import * as fuzzysort from "fuzzysort"
+import { useSDK } from "@tui/context/sdk"
+import { formatUsdCeilFromMsat } from "@tui/util/routstr"
 
 export function useConnected() {
   const sync = useSync()
@@ -20,11 +22,70 @@ export function DialogModel(props: { providerID?: string }) {
   const sync = useSync()
   const dialog = useDialog()
   const keybind = useKeybind()
+  const sdk = useSDK()
   const [ref, setRef] = createSignal<DialogSelectRef<unknown>>()
   const [query, setQuery] = createSignal("")
+  const [routstrBalanceMsat, setRoutstrBalanceMsat] = createSignal<number | undefined>()
 
   const connected = useConnected()
   const providers = createDialogProviderOptions()
+
+  createEffect(() => {
+    if (!connected()) return
+    if (props.providerID && props.providerID !== "routstr") return
+    if (!sync.data.provider.some((x) => x.id === "routstr")) return
+
+    sdk.client.routstr.balance
+      .info()
+      .then((res) => {
+        if (res.error) return
+        const balance = (res.data as any)?.balance
+        const currency = (res.data as any)?.currency
+        if (typeof balance !== "number") return
+        if (currency === "msat") {
+          setRoutstrBalanceMsat(balance)
+          return
+        }
+        if (currency === "sat" || currency === "sats") {
+          setRoutstrBalanceMsat(balance * 1000)
+          return
+        }
+        // Routstr has historically returned msat balances; treat missing currency as msat.
+        if (currency === undefined) {
+          setRoutstrBalanceMsat(balance)
+        }
+      })
+      .catch(() => {})
+  })
+
+  function footerForOpenCode(cost: { input?: number } | undefined) {
+    return cost?.input === 0 ? "Free" : undefined
+  }
+
+  function footerForRoutstr(cost: { input?: number; output?: number } | undefined) {
+    const input = typeof cost?.input === "number" ? cost.input : undefined
+    const output = typeof cost?.output === "number" ? cost.output : undefined
+    if (input === undefined || output === undefined) return
+    const USD = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 })
+    return `${USD.format(input)}/${USD.format(output)} /1M`
+  }
+
+  function routstrLimitMsat(info: any): number | undefined {
+    const required = (info?.options as any)?.routstr?.min_msats
+    if (typeof required !== "number" || required < 0) return
+    return required
+  }
+
+  function routstrInsufficient(maxMsat: number | undefined): boolean {
+    if (typeof maxMsat !== "number") return false
+    const balance = routstrBalanceMsat()
+    if (typeof balance !== "number") return false
+    return balance < maxMsat
+  }
+
+  function routstrInsufficientFooter(maxMsat: number) {
+    return `Insufficient balance (>${formatUsdCeilFromMsat(maxMsat)})`
+  }
 
   const showExtra = createMemo(() => {
     if (!connected()) return false
@@ -51,6 +112,8 @@ export function DialogModel(props: { providerID?: string }) {
           if (!provider) return []
           const model = provider.models[item.modelID]
           if (!model) return []
+          const maxMsat = provider.id === "routstr" ? routstrLimitMsat(model) : undefined
+          const insufficient = provider.id === "routstr" ? routstrInsufficient(maxMsat) : false
           return [
             {
               key: item,
@@ -61,8 +124,13 @@ export function DialogModel(props: { providerID?: string }) {
               title: model.name ?? item.modelID,
               description: provider.name,
               category: "Favorites",
-              disabled: provider.id === "opencode" && model.id.includes("-nano"),
-              footer: model.cost?.input === 0 && provider.id === "opencode" ? "Free" : undefined,
+              disabled: insufficient || (provider.id === "opencode" && model.id.includes("-nano")),
+              footer:
+                provider.id === "routstr" && insufficient && maxMsat !== undefined
+                  ? routstrInsufficientFooter(maxMsat)
+                  : provider.id === "opencode"
+                    ? footerForOpenCode(model.cost)
+                    : undefined,
               onSelect: () => {
                 dialog.clear()
                 local.model.set(
@@ -84,6 +152,8 @@ export function DialogModel(props: { providerID?: string }) {
           if (!provider) return []
           const model = provider.models[item.modelID]
           if (!model) return []
+          const maxMsat = provider.id === "routstr" ? routstrLimitMsat(model) : undefined
+          const insufficient = provider.id === "routstr" ? routstrInsufficient(maxMsat) : false
           return [
             {
               key: item,
@@ -94,8 +164,15 @@ export function DialogModel(props: { providerID?: string }) {
               title: model.name ?? item.modelID,
               description: provider.name,
               category: "Recent",
-              disabled: provider.id === "opencode" && model.id.includes("-nano"),
-              footer: model.cost?.input === 0 && provider.id === "opencode" ? "Free" : undefined,
+              disabled: insufficient || (provider.id === "opencode" && model.id.includes("-nano")),
+              footer:
+                provider.id === "routstr" && insufficient && maxMsat !== undefined
+                  ? routstrInsufficientFooter(maxMsat)
+                  : provider.id === "routstr"
+                    ? footerForRoutstr(model.cost)
+                  : provider.id === "opencode"
+                    ? footerForOpenCode(model.cost)
+                    : undefined,
               onSelect: () => {
                 dialog.clear()
                 local.model.set(
@@ -128,6 +205,10 @@ export function DialogModel(props: { providerID?: string }) {
               providerID: provider.id,
               modelID: model,
             }
+
+            const maxMsat = provider.id === "routstr" ? routstrLimitMsat(info) : undefined
+            const insufficient = provider.id === "routstr" ? routstrInsufficient(maxMsat) : false
+
             return {
               value,
               title: info.name ?? model,
@@ -137,8 +218,15 @@ export function DialogModel(props: { providerID?: string }) {
                 ? "(Favorite)"
                 : undefined,
               category: connected() ? provider.name : undefined,
-              disabled: provider.id === "opencode" && model.includes("-nano"),
-              footer: info.cost?.input === 0 && provider.id === "opencode" ? "Free" : undefined,
+              disabled: insufficient || (provider.id === "opencode" && model.includes("-nano")),
+              footer:
+                provider.id === "routstr" && insufficient && maxMsat !== undefined
+                  ? routstrInsufficientFooter(maxMsat)
+                  : provider.id === "routstr"
+                    ? footerForRoutstr(info.cost)
+                    : provider.id === "opencode"
+                      ? footerForOpenCode(info.cost)
+                      : undefined,
               onSelect() {
                 dialog.clear()
                 local.model.set(

@@ -75,6 +75,7 @@ import { PermissionPrompt } from "./permission"
 import { QuestionPrompt } from "./question"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
 import { formatTranscript } from "../../util/transcript"
+import { formatMsat } from "@tui/util/routstr"
 
 addDefaultParsers(parsers.parsers)
 
@@ -1244,7 +1245,7 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
     if (typeof output === "number" && output >= 0) items.push(`out ${output}`)
     if (typeof base === "number" && base >= 0) items.push(`base ${base}`)
 
-    return `${total} msat`
+    return formatMsat(total)
   })
 
   const final = createMemo(() => {

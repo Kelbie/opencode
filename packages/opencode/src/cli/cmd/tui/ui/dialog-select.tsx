@@ -35,6 +35,7 @@ export interface DialogSelectOption<T = any> {
   description?: string
   footer?: JSX.Element | string
   category?: string
+  hidden?: boolean
   disabled?: boolean
   bg?: RGBA
   gutter?: JSX.Element
@@ -72,11 +73,11 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   let input: InputRenderable
 
   const filtered = createMemo(() => {
-    if (props.skipFilter) return props.options.filter((x) => x.disabled !== true)
+    if (props.skipFilter) return props.options.filter((x) => x.hidden !== true)
     const needle = store.filter.toLowerCase()
     const options = pipe(
       props.options,
-      filter((x) => x.disabled !== true),
+      filter((x) => x.hidden !== true),
     )
     if (!needle) return options
 
@@ -186,7 +187,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
 
     if (evt.name === "return") {
       const option = selected()
-      if (option) {
+      if (option && option.disabled !== true) {
         evt.preventDefault()
         evt.stopPropagation()
         if (option.onSelect) option.onSelect(dialog)
@@ -288,6 +289,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                           setStore("input", "mouse")
                         }}
                         onMouseUp={() => {
+                          if (option.disabled === true) return
                           option.onSelect?.(dialog)
                           props.onSelect?.(option)
                         }}
@@ -302,7 +304,11 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                           if (index === -1) return
                           moveTo(index)
                         }}
-                        backgroundColor={active() ? (option.bg ?? theme.primary) : RGBA.fromInts(0, 0, 0, 0)}
+                        backgroundColor={
+                          active()
+                            ? option.bg ?? (option.disabled === true ? theme.backgroundElement : theme.primary)
+                            : RGBA.fromInts(0, 0, 0, 0)
+                        }
                         paddingLeft={current() || option.gutter ? 1 : 3}
                         paddingRight={3}
                         gap={1}
@@ -314,6 +320,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
                           active={active()}
                           current={current()}
                           gutter={option.gutter}
+                          disabled={option.disabled}
                         />
                       </box>
                     )
@@ -350,14 +357,22 @@ function Option(props: {
   footer?: JSX.Element | string
   gutter?: JSX.Element
   onMouseOver?: () => void
+  disabled?: boolean
 }) {
   const { theme } = useTheme()
   const fg = selectedForeground(theme)
 
+  const base = () => {
+    if (props.disabled) return theme.textMuted
+    if (props.active) return fg
+    if (props.current) return theme.primary
+    return theme.text
+  }
+
   return (
     <>
       <Show when={props.current}>
-        <text flexShrink={0} fg={props.active ? fg : props.current ? theme.primary : theme.text} marginRight={0}>
+        <text flexShrink={0} fg={base()} marginRight={0}>
           ●
         </text>
       </Show>
@@ -368,20 +383,20 @@ function Option(props: {
       </Show>
       <text
         flexGrow={1}
-        fg={props.active ? fg : props.current ? theme.primary : theme.text}
-        attributes={props.active ? TextAttributes.BOLD : undefined}
+        fg={base()}
+        attributes={props.active && !props.disabled ? TextAttributes.BOLD : undefined}
         overflow="hidden"
         wrapMode="none"
         paddingLeft={3}
       >
         {Locale.truncate(props.title, 61)}
         <Show when={props.description}>
-          <span style={{ fg: props.active ? fg : theme.textMuted }}> {props.description}</span>
+          <span style={{ fg: props.active && !props.disabled ? fg : theme.textMuted }}> {props.description}</span>
         </Show>
       </text>
       <Show when={props.footer}>
         <box flexShrink={0}>
-          <text fg={props.active ? fg : theme.textMuted}>{props.footer}</text>
+          <text fg={props.active && !props.disabled ? fg : theme.textMuted}>{props.footer}</text>
         </box>
       </Show>
     </>

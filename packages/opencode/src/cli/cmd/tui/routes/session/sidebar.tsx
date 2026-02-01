@@ -11,10 +11,7 @@ import { useKeybind } from "../../context/keybind"
 import { useDirectory } from "../../context/directory"
 import { useKV } from "../../context/kv"
 import { TodoItem } from "../../component/todo-item"
-
-function formatMsat(total: number) {
-  return `${total} msat`
-}
+import { formatMsat } from "@tui/util/routstr"
 
 function routstrTotalMsat(parts: { type: string }[]): number | undefined {
   for (let i = parts.length - 1; i >= 0; i--) {

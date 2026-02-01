@@ -4,9 +4,10 @@ import { useDialog } from "@tui/ui/dialog"
 import { DialogSelect } from "@tui/ui/dialog-select"
 import { createMemo, createSignal, onMount } from "solid-js"
 import { useToast } from "@tui/ui/toast"
-import { DialogRoutstrDeposit } from "./dialog-routstr-deposit"
-import { DialogRoutstrWithdraw } from "./dialog-routstr-withdraw"
+import { DialogRoutstrDeposit } from "./dialog-routstr-deposit.tsx"
+import { DialogRoutstrWithdraw } from "./dialog-routstr-withdraw.tsx"
 import { DialogPrompt } from "@tui/ui/dialog-prompt"
+import { formatMsat } from "@tui/util/routstr"
 
 function message(err: unknown) {
   if (err instanceof Error) return err.message
@@ -26,7 +27,7 @@ function formatBalance(data: any) {
 
   if (currency === "msat") {
     const sats = balance / 1000
-    return `Balance: ${balance} msat (${sats} sats)`
+    return `Balance: ${formatMsat(balance)} (${sats} sats)`
   }
 
   return `Balance: ${balance} ${currency ?? "sat"}`

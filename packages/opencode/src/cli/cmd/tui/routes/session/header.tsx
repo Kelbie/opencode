@@ -9,10 +9,7 @@ import { useCommandDialog } from "@tui/component/dialog-command"
 import { useKeybind } from "../../context/keybind"
 import { Installation } from "@/installation"
 import { useTerminalDimensions } from "@opentui/solid"
-
-function formatMsat(total: number) {
-  return `${total} msat`
-}
+import { formatMsat } from "@tui/util/routstr"
 
 function routstrTotalMsat(parts: { type: string }[]): number | undefined {
   for (let i = parts.length - 1; i >= 0; i--) {
