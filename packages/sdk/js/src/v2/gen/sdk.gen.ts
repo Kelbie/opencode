@@ -96,6 +96,11 @@ import type {
   QuestionRejectResponses,
   QuestionReplyErrors,
   QuestionReplyResponses,
+  RoutstrBalanceCreateResponses,
+  RoutstrBalanceInfoResponses,
+  RoutstrBalanceRefundResponses,
+  RoutstrBalanceTopupResponses,
+  RoutstrModelsResponses,
   SessionAbortErrors,
   SessionAbortResponses,
   SessionChildrenErrors,
@@ -2161,6 +2166,142 @@ export class Provider extends HeyApiClient {
   }
 }
 
+export class Balance extends HeyApiClient {
+  /**
+   * Create Routstr balance key
+   *
+   * Exchange a Cashu token for a Routstr balance API key (sk-...).
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      initial_balance_token?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "body", key: "initial_balance_token" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<RoutstrBalanceCreateResponses, unknown, ThrowOnError>({
+      url: "/routstr/balance/create",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Get Routstr balance
+   *
+   * Fetch Routstr /v1/balance/info using stored Routstr auth.
+   */
+  public info<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "directory" }] }])
+    return (options?.client ?? this.client).get<RoutstrBalanceInfoResponses, unknown, ThrowOnError>({
+      url: "/routstr/balance/info",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Top up Routstr balance
+   *
+   * Top up Routstr /v1/balance/topup with a Cashu token.
+   */
+  public topup<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      cashu_token?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "body", key: "cashu_token" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<RoutstrBalanceTopupResponses, unknown, ThrowOnError>({
+      url: "/routstr/balance/topup",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Refund Routstr balance
+   *
+   * Refund remaining Routstr balance to a Cashu token.
+   */
+  public refund<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "directory" }] }])
+    return (options?.client ?? this.client).post<RoutstrBalanceRefundResponses, unknown, ThrowOnError>({
+      url: "/routstr/balance/refund",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Routstr extends HeyApiClient {
+  /**
+   * List Routstr models
+   *
+   * Fetch Routstr /v1/models (cached briefly).
+   */
+  public models<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "directory" }] }])
+    return (options?.client ?? this.client).get<RoutstrModelsResponses, unknown, ThrowOnError>({
+      url: "/routstr/models",
+      ...options,
+      ...params,
+    })
+  }
+
+  private _balance?: Balance
+  get balance(): Balance {
+    return (this._balance ??= new Balance({ client: this.client }))
+  }
+}
+
 export class Find extends HeyApiClient {
   /**
    * Find text
@@ -3249,6 +3390,11 @@ export class OpencodeClient extends HeyApiClient {
   private _provider?: Provider
   get provider(): Provider {
     return (this._provider ??= new Provider({ client: this.client }))
+  }
+
+  private _routstr?: Routstr
+  get routstr(): Routstr {
+    return (this._routstr ??= new Routstr({ client: this.client }))
   }
 
   private _find?: Find

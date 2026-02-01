@@ -1221,6 +1221,31 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
   const { theme } = useTheme()
   const sync = useSync()
   const messages = createMemo(() => sync.data.message[props.message.sessionID] ?? [])
+  const routstr = createMemo(() => {
+    if (props.message.providerID !== "routstr") return
+    for (let i = props.parts.length - 1; i >= 0; i--) {
+      const part = props.parts[i]
+      if (part.type !== "text") continue
+      const cost = (part.metadata as any)?.routstr?.cost
+      if (cost && typeof cost === "object") return cost as any
+    }
+  })
+
+  const routstrCost = createMemo(() => {
+    const cost = routstr()
+    const total = typeof cost?.total_msats === "number" ? cost.total_msats : undefined
+    if (total === undefined) return
+    const input = typeof cost?.input_msats === "number" ? cost.input_msats : undefined
+    const output = typeof cost?.output_msats === "number" ? cost.output_msats : undefined
+    const base = typeof cost?.base_msats === "number" ? cost.base_msats : undefined
+
+    const items: string[] = []
+    if (typeof input === "number" && input >= 0) items.push(`in ${input}`)
+    if (typeof output === "number" && output >= 0) items.push(`out ${output}`)
+    if (typeof base === "number" && base >= 0) items.push(`base ${base}`)
+
+    return `${total} msat`
+  })
 
   const final = createMemo(() => {
     return props.message.finish && !["tool-calls", "unknown"].includes(props.message.finish)
@@ -1283,6 +1308,9 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
               <span style={{ fg: theme.textMuted }}> · {props.message.modelID}</span>
               <Show when={duration()}>
                 <span style={{ fg: theme.textMuted }}> · {Locale.duration(duration())}</span>
+              </Show>
+              <Show when={routstrCost()}>
+                <span style={{ fg: theme.textMuted }}> · {routstrCost()}</span>
               </Show>
               <Show when={props.message.error?.name === "MessageAbortedError"}>
                 <span style={{ fg: theme.textMuted }}> · interrupted</span>

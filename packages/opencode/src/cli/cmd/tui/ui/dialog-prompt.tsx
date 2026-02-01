@@ -3,6 +3,8 @@ import { useTheme } from "../context/theme"
 import { useDialog, type DialogContext } from "./dialog"
 import { onMount, type JSX } from "solid-js"
 import { useKeyboard } from "@opentui/solid"
+import { useKeybind } from "../context/keybind"
+import { Clipboard } from "../util/clipboard"
 
 export type DialogPromptProps = {
   title: string
@@ -16,9 +18,22 @@ export type DialogPromptProps = {
 export function DialogPrompt(props: DialogPromptProps) {
   const dialog = useDialog()
   const { theme } = useTheme()
+  const keybind = useKeybind()
   let textarea: TextareaRenderable
 
   useKeyboard((evt) => {
+    if (keybind.match("input_paste", evt)) {
+      evt.preventDefault()
+      void (async () => {
+        const content = await Clipboard.read()
+        if (!content) return
+        if (content.mime !== "text/plain") return
+        textarea.setText(content.data)
+        textarea.gotoLineEnd()
+      })()
+      return
+    }
+
     if (evt.name === "return") {
       props.onConfirm?.(textarea.plainText)
     }
@@ -60,6 +75,9 @@ export function DialogPrompt(props: DialogPromptProps) {
       <box paddingBottom={1} gap={1} flexDirection="row">
         <text fg={theme.text}>
           enter <span style={{ fg: theme.textMuted }}>submit</span>
+        </text>
+        <text fg={theme.text}>
+          ctrl+v <span style={{ fg: theme.textMuted }}>paste</span>
         </text>
       </box>
     </box>

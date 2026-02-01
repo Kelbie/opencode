@@ -13,6 +13,7 @@ import { DialogModel } from "./dialog-model"
 import { useKeyboard } from "@opentui/solid"
 import { Clipboard } from "@tui/util/clipboard"
 import { useToast } from "../ui/toast"
+import { DialogRoutstrWallet } from "./dialog-routstr-wallet"
 
 const PROVIDER_PRIORITY: Record<string, number> = {
   opencode: 0,
@@ -44,6 +45,10 @@ export function createDialogProviderOptions() {
           category: provider.id in PROVIDER_PRIORITY ? "Popular" : "Other",
           footer: isConnected ? "Connected" : undefined,
           async onSelect() {
+            if (provider.id === "routstr" && isConnected) {
+              dialog.replace(() => <DialogRoutstrWallet />)
+              return
+            }
             const methods = sync.data.provider_auth[provider.id] ?? [
               {
                 type: "api",
@@ -221,6 +226,7 @@ function ApiMethod(props: ApiMethodProps) {
   const sdk = useSDK()
   const sync = useSync()
   const { theme } = useTheme()
+  const toast = useToast()
 
   return (
     <DialogPrompt
@@ -240,15 +246,52 @@ function ApiMethod(props: ApiMethodProps) {
       }
       onConfirm={async (value) => {
         if (!value) return
+        const trimmed = value.trim()
+        if (props.providerID === "routstr" && (trimmed.startsWith("cashuA") || trimmed.startsWith("cashuB"))) {
+          const result = await sdk.client.routstr.balance.create({
+            initial_balance_token: trimmed,
+          })
+          if (result.error) {
+            toast.show({
+              variant: "error",
+              message: (result.error as any)?.data?.message ?? "Failed to create Routstr balance key",
+            })
+            return
+          }
+          const apiKey = (result.data as any)?.api_key
+          if (!apiKey || typeof apiKey !== "string") {
+            toast.show({
+              variant: "error",
+              message: "Routstr did not return a balance key",
+            })
+            return
+          }
+          await sdk.client.auth.set({
+            providerID: props.providerID,
+            auth: {
+              type: "api",
+              key: apiKey,
+            },
+          })
+          await sdk.client.instance.dispose()
+          await sync.bootstrap()
+          dialog.replace(() => <DialogRoutstrWallet />)
+          return
+        }
+
         await sdk.client.auth.set({
           providerID: props.providerID,
           auth: {
             type: "api",
-            key: value,
+            key: trimmed,
           },
         })
         await sdk.client.instance.dispose()
         await sync.bootstrap()
+        if (props.providerID === "routstr") {
+          dialog.replace(() => <DialogRoutstrWallet />)
+          return
+        }
         dialog.replace(() => <DialogModel providerID={props.providerID} />)
       }}
     />

@@ -10,6 +10,10 @@ import { useKeybind } from "../../context/keybind"
 import { Installation } from "@/installation"
 import { useTerminalDimensions } from "@opentui/solid"
 
+function formatMsat(total: number) {
+  return `${total} msat`
+}
+
 const Title = (props: { session: Accessor<Session> }) => {
   const { theme } = useTheme()
   return (
@@ -37,6 +41,21 @@ export function Header() {
   const messages = createMemo(() => sync.data.message[route.sessionID] ?? [])
 
   const cost = createMemo(() => {
+    const msat = messages().reduce((sum, msg) => {
+      if (msg.role !== "assistant" || msg.providerID !== "routstr") return sum
+      const parts = sync.data.part[msg.id] ?? []
+      const last = parts.findLast(
+        (part) =>
+          part.type === "text" &&
+          typeof (part.metadata as { routstr?: { cost?: { total_msats?: number } } })?.routstr?.cost?.total_msats ===
+            "number",
+      )
+      const total = (last?.metadata as { routstr?: { cost?: { total_msats?: number } } })?.routstr?.cost?.total_msats
+      if (typeof total !== "number" || total < 0) return sum
+      return sum + total
+    }, 0)
+    if (msat > 0) return formatMsat(msat)
+
     const total = pipe(
       messages(),
       sumBy((x) => (x.role === "assistant" ? x.cost : 0)),

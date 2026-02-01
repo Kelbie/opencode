@@ -47,6 +47,17 @@ export const ProviderRoutes = lazy(() =>
           }
         }
 
+        if (!filteredProviders["routstr"] && (enabled ? enabled.has("routstr") : true) && !disabled.has("routstr")) {
+          filteredProviders["routstr"] = {
+            id: "routstr",
+            name: "Routstr",
+            api: "https://api.routstr.com/v1",
+            npm: "@ai-sdk/openai-compatible",
+            env: [],
+            models: {},
+          }
+        }
+
         const connected = await Provider.list()
         const providers = Object.assign(
           mapValues(filteredProviders, (x) => Provider.fromModelsDevProvider(x)),
@@ -54,7 +65,7 @@ export const ProviderRoutes = lazy(() =>
         )
         return c.json({
           all: Object.values(providers),
-          default: mapValues(providers, (item) => Provider.sort(Object.values(item.models))[0].id),
+          default: mapValues(providers, (item) => Provider.sort(Object.values(item.models))[0]?.id ?? ""),
           connected: Object.keys(connected),
         })
       },

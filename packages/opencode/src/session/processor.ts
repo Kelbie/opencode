@@ -239,6 +239,22 @@ export namespace SessionProcessor {
                     usage: value.usage,
                     metadata: value.providerMetadata,
                   })
+                  const routstrCost = (value.providerMetadata as any)?.routstr?.cost
+                  if (routstrCost && typeof routstrCost === "object") {
+                    const parts = await MessageV2.parts(input.assistantMessage.id)
+                    const last = parts.findLast((x) => x.type === "text") as MessageV2.TextPart | undefined
+                    if (last) {
+                      const existing = (last.metadata ?? {}) as any
+                      last.metadata = {
+                        ...existing,
+                        routstr: {
+                          ...(existing.routstr ?? {}),
+                          cost: routstrCost,
+                        },
+                      }
+                      await Session.updatePart(last)
+                    }
+                  }
                   input.assistantMessage.finish = value.finishReason
                   input.assistantMessage.cost += usage.cost
                   input.assistantMessage.tokens = usage.tokens
