@@ -31,6 +31,35 @@ function authHeader(key: string) {
   }
 }
 
+async function routstrFail(res: Response, prefix: string): Promise<never> {
+  const headerID =
+    res.headers.get("x-request-id") ??
+    res.headers.get("x-requestid") ??
+    res.headers.get("request-id") ??
+    res.headers.get("x-correlation-id") ??
+    undefined
+
+  const txt = await res.text().catch(() => "")
+  const json = await Promise.resolve()
+    .then(() => (txt ? JSON.parse(txt) : undefined))
+    .catch(() => undefined)
+
+  const detail =
+    json && typeof json === "object"
+      ? ((json as any).detail ?? (json as any).message ?? (json as any).error ?? undefined)
+      : undefined
+
+  const bodyID = json && typeof json === "object" ? ((json as any).request_id ?? (json as any).requestId ?? undefined) : undefined
+  const id = typeof bodyID === "string" ? bodyID : typeof headerID === "string" ? headerID : undefined
+
+  const message = typeof detail === "string" && detail ? detail : txt || res.statusText
+  const extra = id ? ` (request_id: ${id})` : ""
+
+  throw new HTTPException(res.status as any, {
+    message: `${prefix} (${res.status}): ${message}${extra}`,
+  })
+}
+
 export const RoutstrRoutes = lazy(() =>
   new Hono()
     .get(
@@ -65,12 +94,7 @@ export const RoutstrRoutes = lazy(() =>
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         })
 
-        if (!res.ok) {
-          const body = await res.text().catch(() => "")
-          throw new HTTPException(res.status as any, {
-            message: `Failed to fetch Routstr models (${res.status}): ${body || res.statusText}`,
-          })
-        }
+        if (!res.ok) return routstrFail(res, "Failed to fetch Routstr models")
 
         const json = await res.json()
         cache.time = now
@@ -108,12 +132,7 @@ export const RoutstrRoutes = lazy(() =>
           signal: AbortSignal.timeout(BALANCE_CREATE_TIMEOUT_MS),
         })
 
-        if (!res.ok) {
-          const body = await res.text().catch(() => "")
-          throw new HTTPException(res.status as any, {
-            message: `Failed to create Routstr balance key (${res.status}): ${body || res.statusText}`,
-          })
-        }
+        if (!res.ok) return routstrFail(res, "Failed to create Routstr balance key")
 
         const json = await res.json()
         return c.json(json)
@@ -144,12 +163,7 @@ export const RoutstrRoutes = lazy(() =>
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         })
 
-        if (!res.ok) {
-          const body = await res.text().catch(() => "")
-          throw new HTTPException(res.status as any, {
-            message: `Failed to fetch Routstr balance (${res.status}): ${body || res.statusText}`,
-          })
-        }
+        if (!res.ok) return routstrFail(res, "Failed to fetch Routstr balance")
 
         return c.json(await res.json())
       },
@@ -190,12 +204,7 @@ export const RoutstrRoutes = lazy(() =>
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         })
 
-        if (!res.ok) {
-          const txt = await res.text().catch(() => "")
-          throw new HTTPException(res.status as any, {
-            message: `Failed to top up Routstr balance (${res.status}): ${txt || res.statusText}`,
-          })
-        }
+        if (!res.ok) return routstrFail(res, "Failed to top up Routstr balance")
 
         return c.json(await res.json())
       },
@@ -225,12 +234,7 @@ export const RoutstrRoutes = lazy(() =>
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         })
 
-        if (!res.ok) {
-          const txt = await res.text().catch(() => "")
-          throw new HTTPException(res.status as any, {
-            message: `Failed to refund Routstr balance (${res.status}): ${txt || res.statusText}`,
-          })
-        }
+        if (!res.ok) return routstrFail(res, "Failed to refund Routstr balance")
 
         return c.json(await res.json())
       },
