@@ -11,6 +11,17 @@ import { useKeybind } from "../../context/keybind"
 import { useDirectory } from "../../context/directory"
 import { useKV } from "../../context/kv"
 import { TodoItem } from "../../component/todo-item"
+import { formatMsat } from "@tui/util/routstr"
+
+function routstrTotalMsat(parts: { type: string }[]): number | undefined {
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const part = parts[i]
+    if (part.type !== "text") continue
+    const meta = (part as { metadata?: { routstr?: { cost?: { total_msats?: number } } } }).metadata
+    const total = meta?.routstr?.cost?.total_msats
+    if (typeof total === "number") return total
+  }
+}
 
 export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   const sync = useSync()
@@ -41,6 +52,15 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
   )
 
   const cost = createMemo(() => {
+    const msat = messages().reduce((sum, msg) => {
+      if (msg.role !== "assistant" || msg.providerID !== "routstr") return sum
+      const parts = sync.data.part[msg.id] ?? []
+      const total = routstrTotalMsat(parts)
+      if (typeof total !== "number" || total < 0) return sum
+      return sum + total
+    }, 0)
+    if (msat > 0) return formatMsat(msat)
+
     const total = messages().reduce((sum, x) => sum + (x.role === "assistant" ? x.cost : 0), 0)
     return new Intl.NumberFormat("en-US", {
       style: "currency",

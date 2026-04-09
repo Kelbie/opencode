@@ -9,6 +9,17 @@ import { useCommandDialog } from "@tui/component/dialog-command"
 import { useKeybind } from "../../context/keybind"
 import { Installation } from "@/installation"
 import { useTerminalDimensions } from "@opentui/solid"
+import { formatMsat } from "@tui/util/routstr"
+
+function routstrTotalMsat(parts: { type: string }[]): number | undefined {
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const part = parts[i]
+    if (part.type !== "text") continue
+    const meta = (part as { metadata?: { routstr?: { cost?: { total_msats?: number } } } }).metadata
+    const total = meta?.routstr?.cost?.total_msats
+    if (typeof total === "number") return total
+  }
+}
 
 const Title = (props: { session: Accessor<Session> }) => {
   const { theme } = useTheme()
@@ -37,6 +48,15 @@ export function Header() {
   const messages = createMemo(() => sync.data.message[route.sessionID] ?? [])
 
   const cost = createMemo(() => {
+    const msat = messages().reduce((sum, msg) => {
+      if (msg.role !== "assistant" || msg.providerID !== "routstr") return sum
+      const parts = sync.data.part[msg.id] ?? []
+      const total = routstrTotalMsat(parts)
+      if (typeof total !== "number" || total < 0) return sum
+      return sum + total
+    }, 0)
+    if (msat > 0) return formatMsat(msat)
+
     const total = pipe(
       messages(),
       sumBy((x) => (x.role === "assistant" ? x.cost : 0)),

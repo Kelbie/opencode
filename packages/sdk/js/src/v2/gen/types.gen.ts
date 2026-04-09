@@ -4102,6 +4102,90 @@ export type ProviderOauthCallbackResponses = {
 
 export type ProviderOauthCallbackResponse = ProviderOauthCallbackResponses[keyof ProviderOauthCallbackResponses]
 
+export type RoutstrModelsData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+  }
+  url: "/routstr/models"
+}
+
+export type RoutstrModelsResponses = {
+  /**
+   * Models
+   */
+  200: unknown
+}
+
+export type RoutstrBalanceCreateData = {
+  body?: {
+    initial_balance_token: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+  }
+  url: "/routstr/balance/create"
+}
+
+export type RoutstrBalanceCreateResponses = {
+  /**
+   * Created balance key
+   */
+  200: unknown
+}
+
+export type RoutstrBalanceInfoData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+  }
+  url: "/routstr/balance/info"
+}
+
+export type RoutstrBalanceInfoResponses = {
+  /**
+   * Balance info
+   */
+  200: unknown
+}
+
+export type RoutstrBalanceTopupData = {
+  body?: {
+    cashu_token: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+  }
+  url: "/routstr/balance/topup"
+}
+
+export type RoutstrBalanceTopupResponses = {
+  /**
+   * Topped up
+   */
+  200: unknown
+}
+
+export type RoutstrBalanceRefundData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+  }
+  url: "/routstr/balance/refund"
+}
+
+export type RoutstrBalanceRefundResponses = {
+  /**
+   * Refunded
+   */
+  200: unknown
+}
+
 export type FindTextData = {
   body?: never
   path?: never

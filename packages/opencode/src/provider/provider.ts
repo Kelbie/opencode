@@ -41,6 +41,12 @@ import { ProviderTransform } from "./transform"
 export namespace Provider {
   const log = Log.create({ service: "provider" })
 
+  const ROUTSTR_BASE_URL = "https://api.routstr.com/v1"
+
+  function isCashuToken(key: string) {
+    return key.startsWith("cashuA") || key.startsWith("cashuB")
+  }
+
   function isGpt5OrLater(modelID: string): boolean {
     const match = /^gpt-(\d+)/.exec(modelID)
     if (!match) {
@@ -51,6 +57,31 @@ export namespace Provider {
 
   function shouldUseCopilotResponsesApi(modelID: string): boolean {
     return isGpt5OrLater(modelID) && !modelID.startsWith("gpt-5-mini")
+  }
+
+  function isRoutstrCompatible(model: any): boolean {
+    const context = typeof model?.context_length === "number" ? model.context_length : 0
+    if (context < 32768) return false
+
+    const id = typeof model?.id === "string" ? model.id : ""
+    const lowerId = id.toLowerCase()
+    if (lowerId.includes("audio") || lowerId.includes("tts") || lowerId.includes("transcrib")) return false
+    if (lowerId.includes("image") || lowerId.includes("vision->image")) return false
+    if (lowerId.includes("search")) return false
+
+    const arch = model?.architecture
+    const input = Array.isArray(arch?.input_modalities) ? arch.input_modalities : []
+    const output = Array.isArray(arch?.output_modalities) ? arch.output_modalities : []
+    if (!output.includes("text")) return false
+
+    const modality = typeof arch?.modality === "string" ? arch.modality : ""
+    if (output.includes("image") && modality.includes("image")) return false
+    if (output.includes("audio") && !input.includes("text")) return false
+
+    const desc = String(model?.description ?? "").toLowerCase()
+    if (desc.includes("roleplay") && !desc.includes("coding") && !desc.includes("tool")) return false
+
+    return true
   }
 
   const BUNDLED_PROVIDERS: Record<string, (options: any) => SDK> = {
@@ -94,6 +125,239 @@ export namespace Provider {
             "anthropic-beta":
               "claude-code-20250219,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14",
           },
+        },
+      }
+    },
+    routstr: async (input) => {
+      const auth = await Auth.get("routstr")
+      if (!auth || auth.type !== "api") return { autoload: false }
+
+      const apiKey = auth.key
+      const costs = new WeakMap<AbortSignal, unknown>()
+
+      const fetchFiltered = async (request: RequestInfo | URL, init?: RequestInit | BunFetchRequestInit) => {
+        const res = await fetch(request, init)
+        const type = res.headers.get("content-type") ?? ""
+        if (!type.includes("text/event-stream") || !res.body) return res
+
+        const signal = init?.signal
+        const decoder = new TextDecoder()
+        const encoder = new TextEncoder()
+        let buf = ""
+
+        const stream = res.body.pipeThrough(
+          new TransformStream<Uint8Array, Uint8Array>({
+            transform(chunk, controller) {
+              buf += decoder.decode(chunk, { stream: true })
+
+              while (true) {
+                const idx = buf.indexOf("\n\n")
+                if (idx === -1) break
+                const raw = buf.slice(0, idx + 2)
+                buf = buf.slice(idx + 2)
+
+                const data = raw
+                  .split("\n")
+                  .filter((line) => line.startsWith("data:"))
+                  .map((line) => line.slice("data:".length).trimStart())
+                  .join("\n")
+
+                if (data && data !== "[DONE]") {
+                  const json = (() => {
+                    try {
+                      return JSON.parse(data)
+                    } catch {
+                      return undefined
+                    }
+                  })()
+
+                  if (json && typeof json === "object") {
+                    const obj = json as any
+                    const isCostOnly = obj.cost !== undefined && obj.choices === undefined && obj.error === undefined
+                    if (isCostOnly) {
+                      if (signal instanceof AbortSignal) {
+                        costs.set(signal, obj.cost)
+                      }
+                      continue
+                    }
+                  }
+                }
+
+                controller.enqueue(encoder.encode(raw))
+              }
+            },
+            flush(controller) {
+              if (!buf) return
+              controller.enqueue(encoder.encode(buf))
+            },
+          }),
+        )
+
+        const headers = new Headers(res.headers)
+        // Content length is no longer accurate once we filter chunks.
+        headers.delete("content-length")
+
+        return new Response(stream, {
+          status: res.status,
+          statusText: res.statusText,
+          headers,
+        })
+      }
+
+      const res = await fetch(`${ROUTSTR_BASE_URL}/models`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+        signal: AbortSignal.timeout(15_000),
+      }).catch(() => undefined)
+
+      const json = await res?.json().catch(() => undefined)
+      const models = Array.isArray(json?.data) ? json.data : []
+      const compatible = models.filter(isRoutstrCompatible)
+
+      if (compatible.length > 0) {
+        for (const key of Object.keys(input.models)) {
+          delete input.models[key]
+        }
+
+        const release = new Date().toISOString()
+        for (const model of compatible) {
+          const id = typeof model?.id === "string" ? model.id : undefined
+          if (!id) continue
+
+          const name = typeof model?.name === "string" ? model.name : id
+          const context = typeof model?.context_length === "number" ? model.context_length : 0
+          const output =
+            typeof model?.top_provider?.max_completion_tokens === "number" ? model.top_provider.max_completion_tokens : 8192
+
+          const pricing = model?.pricing
+          const promptUsdPerToken = typeof pricing?.prompt === "number" ? pricing.prompt : undefined
+          const completionUsdPerToken = typeof pricing?.completion === "number" ? pricing.completion : undefined
+
+          const satsPricing = model?.sats_pricing
+          const satsPrompt = typeof satsPricing?.prompt === "number" ? satsPricing.prompt : undefined
+          const satsCompletion = typeof satsPricing?.completion === "number" ? satsPricing.completion : undefined
+          const satsRequest = typeof satsPricing?.request === "number" ? satsPricing.request : 0
+
+          // Routstr/OpenRouter pricing is exposed as sats-per-token; estimate a minimum required balance
+          // (smaller than max_cost) so we only disable when genuinely too low.
+          const minInputTokens = 100
+          const minOutputTokens = Math.min(1000, output)
+          const minSats =
+            typeof satsPrompt === "number" && typeof satsCompletion === "number"
+              ? satsRequest + minInputTokens * satsPrompt + minOutputTokens * satsCompletion
+              : undefined
+          const minMsat = typeof minSats === "number" && minSats >= 0 ? Math.ceil(minSats * 1000) : undefined
+
+          input.models[id] = {
+            id,
+            providerID: input.id,
+            api: {
+              id,
+              url: ROUTSTR_BASE_URL,
+              npm: "@ai-sdk/openai-compatible",
+            },
+            name,
+            family: typeof model?.family === "string" ? model.family : undefined,
+            capabilities: {
+              temperature: true,
+              reasoning: true,
+              attachment: false,
+              toolcall: true,
+              input: {
+                text: true,
+                audio: false,
+                image: false,
+                video: false,
+                pdf: false,
+              },
+              output: {
+                text: true,
+                audio: false,
+                image: false,
+                video: false,
+                pdf: false,
+              },
+              interleaved: false,
+            },
+            cost: {
+              // Routstr returns USD-per-token, convert to USD-per-1M tokens to match models.dev convention.
+              input: typeof promptUsdPerToken === "number" && promptUsdPerToken >= 0 ? promptUsdPerToken * 1_000_000 : 0,
+              output:
+                typeof completionUsdPerToken === "number" && completionUsdPerToken >= 0
+                  ? completionUsdPerToken * 1_000_000
+                  : 0,
+              cache: {
+                read: 0,
+                write: 0,
+              },
+            },
+            limit: {
+              context,
+              output,
+            },
+            status: "active",
+            options: {
+              routstr: {
+                min_msats: minMsat,
+              },
+            },
+            headers: {},
+            release_date: release,
+            variants: {},
+          }
+        }
+      }
+
+      return {
+        autoload: Object.keys(input.models).length > 0,
+        async getModel(sdk: any, modelID: string) {
+          const base = sdk.languageModel(modelID)
+          const wrapped = {
+            ...base,
+            async doStream(options: any) {
+              const result = await base.doStream(options)
+              const signal = options?.abortSignal
+              const stream = result.stream.pipeThrough(
+                new TransformStream<any, any>({
+                  transform(part, controller) {
+                    if (part?.type === "finish" && signal instanceof AbortSignal) {
+                      const cost = costs.get(signal)
+                      costs.delete(signal)
+                      if (cost && typeof cost === "object") {
+                        const md = part.providerMetadata ?? {}
+                        controller.enqueue({
+                          ...part,
+                          providerMetadata: {
+                            ...md,
+                            routstr: {
+                              ...(md as any).routstr,
+                              cost,
+                            },
+                          },
+                        })
+                        return
+                      }
+                    }
+                    controller.enqueue(part)
+                  },
+                }),
+              )
+              return {
+                ...result,
+                stream,
+              }
+            },
+          }
+          return wrapped
+        },
+        options: {
+          baseURL: ROUTSTR_BASE_URL,
+          apiKey,
+          includeUsage: false,
+          // `fetch` is a Bun-specific callable with extra properties; this wrapper function is compatible at runtime.
+          fetch: fetchFiltered as unknown as typeof fetch,
         },
       }
     },
@@ -681,6 +945,19 @@ export namespace Provider {
     const config = await Config.get()
     const modelsDev = await ModelsDev.get()
     const database = mapValues(modelsDev, fromModelsDevProvider)
+
+    if (!database["routstr"]) {
+      database["routstr"] = {
+        id: "routstr",
+        source: "custom",
+        name: "Routstr",
+        env: [],
+        options: {
+          baseURL: ROUTSTR_BASE_URL,
+        },
+        models: {},
+      }
+    }
 
     const disabled = new Set(config.disabled_providers ?? [])
     const enabled = config.enabled_providers ? new Set(config.enabled_providers) : null
